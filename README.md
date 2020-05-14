@@ -16,7 +16,7 @@ The folder "dREGpeaks" contains bed files with dREG peaks called for each experi
 All code used for analysis can be found in the file "supplemental.code.Rmd", or in the accompanying pdf file.  
 
 ## UCSC trackhub
-The file "hub.txt" can be loaded at the UCSC genome browser to import the files in bw/merged_normed. 
+The file "hub.txt" can be loaded at the UCSC genome browser to import the files in bw/merged_normed {here}[https://genome.ucsc.edu/cgi-bin/hgHubConnect]. Paste the raw url and click "Add Hub".
 
 ## Cost/Time comparison
 The file "CostTimeComparison.pdf" compares the cost and hands-on time requirements for PRO-seq and qPRO-seq protocols. 
