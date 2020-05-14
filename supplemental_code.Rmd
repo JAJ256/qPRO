@@ -1,0 +1,792 @@
+---
+title: Supplemental code for 'A rapid, sensitive, scalable method for Precision Run-On
+  sequencing (PRO-seq)'
+author:
+  - Julius Judd^[Department of Molecular Biology and Genetics, Cornell University, Ithaca, New York 14835, USA]
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+\newpage
+# Table of Contents
+1. PRO-seq alignment metrics
+2. PRO-seq alignment pipeline
+3. Data Analysis (R scripts)
+4. Session Info
+
+This file contains code used to analyze PRO-seq data for the manuscript 'A rapid, sensitive, scalable method for Precision Run-On'.
+This document is intended to allow any user to download our raw data (GSEXXXXXX) and exactly reproduce the analyses presented in the manuscript.
+Please direct questions regarding this code to jaj256@cornell.edu.
+For convenience, raw and normalized bigWig signal tracks and dREG peak calls are also included in the accompanying gitHub repository: 
+[http://github.com/jaj256/qPRO](http://github.com/jaj256/qPRO)  
+\newpage
+
+# 1. PRO-seq alignment metrics
+
+| Lib. Prep. | # Cells | Rep. | # Reads    | % A/D  | % rRNA | Map %  | # Uniq Non-Dup |
+| :--------: | :-----: | :--: | :--------: | :----: | :----: | :----: | :------------: | 
+| qPRO-seq   | 1M      | 1    | 40,408,336 | 16.19% | 6.68%  | 87.31% | 15,904,565     |
+| qPRO-seq   | 1M      | 2    | 37,056,631 | 16.19% | 6.38%  | 84.49% | 15,066,657     |
+| PRO-seq    | 1M      | 1    | 14,556,851 | 25.26% | 5.37%  | 73.91% | 5,796,951      |
+| PRO-seq    | 1M      | 2    | 16,284,988 | 22.45% | 5.31%  | 80.39% | 7,051,978      |
+| qPRO-seq   | 250k    | 1    | 89,407,788 | 47.11% | 5.87%  | 37.64% | 1,435,034      |
+| qPRO-seq   | 250k    | 2    | 50,898,735 | 42.02% | 5.46%  | 84.87% | 5,456,625      |
+
+\newpage
+
+# 2. PRO-seq alignment pipeline
+
+The alignment pipeline used for PRO-seq data can be found here:  
+
+[http://github.com/jaj256/PROseq_alignment.sh](http://github.com/jaj256/PROseq_alignment.sh)  
+
+\newpage
+# 3. Data Analysis (R scripts)
+
+## Loading Packages
+```{r, error = F, message = F, warning = F}
+library(ggsci)
+library(DESeq2)
+library(ggpubr)
+library(viridis)
+library(scales)
+library(rtracklayer)
+library(GenomicRanges)
+library(BiocParallel)
+library(tiff)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(circlize)
+library(BRGenomics)
+library(extrafont)
+loadfonts()
+library(FSA)
+library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+library(tidyverse)
+```
+
+## Functions
+Custom R functions used throughout the remainder of the code chunks
+```{r collapse = T, error = F, message = F, warning = F, eval = F, echo = T}
+export.bw.stranded <- function(name, path, GRanges.lst) {
+  # This function takes the name (chr) of a single entry of a GRanges list,
+  # That contains both + and - strand data. It writes fwd and rev bw files
+  # after negating the - strand data. The file will be written at "path" 
+  # (chr), with the name being "name"_[fwd/rev].bw
+  
+    # Writing + strand file
+  export.bw(
+    GRanges.lst[[name]][strand(GRanges.lst[[name]]) == "+"],
+    paste0(path, name, "_fwd.bw")
+  )
+  
+  # Generating new object for - strand
+  minus.gr <- GRanges.lst[[name]][strand(GRanges.lst[[name]]) == "-"]
+  
+  # Negating abs of - strand scores (so always ends up negative)
+  minus.gr$score <- abs(minus.gr$score) * -1
+  
+  # Writing - strand file
+  export.bw(
+    minus.gr,
+    paste0(path, name, "_rev.bw")
+  )
+}
+
+RPMnorm <- function(gr){
+    gr$score <- (1e6 / sum(gr$score)) * gr$score
+    return(gr)
+}
+
+ggtheme.jj <- function() {
+    # Custom theme options for ggplot2 graphics
+    theme_classic(base_size=10, base_family="Helvetica") %+replace%
+        theme(
+            axis.text = element_text(size = 8), 
+            axis.ticks = element_line(colour = "black"), 
+            legend.key = element_blank(), 
+            panel.background = element_rect(fill = "white", colour = NA), 
+            panel.border = element_blank(), 
+            panel.grid.major = element_blank(), 
+            panel.grid.minor = element_blank(), 
+            strip.background = element_blank(),
+            strip.text = element_text(size=10),
+            plot.title = element_text(hjust = 0.5, size = 10),
+            axis.title = element_text(size = 8, face = "bold")
+        )
+}
+```
+
+## Reading in Data
+```{r collapse = T, error = F, message = F, warning = F, eval = F, echo = T}
+# Reading in list of GRanges objects of bw signal tracks of 
+# PRO-seq generated for this manuscript
+PROseq.lst <- list(
+ "K562_1M_PRO_rep1" = import_bigWig(
+    "bw/K562_1M_sPRO_Rep1_deDuped_fwd.bw",
+    "bw/K562_1M_sPRO_Rep1_deDuped_rev.bw",
+    genome = "hg38", keep.X = F, keep.Y = F
+    ),
+ "K562_1M_PRO_rep2" = import_bigWig(
+    "bw/K562_1M_sPRO_Rep2_deDuped_fwd.bw", 
+    "bw/K562_1M_sPRO_Rep2_deDuped_rev.bw",
+    genome = "hg38", keep.X = F, keep.Y = F
+    ),
+ "K562_1M_qPRO_rep1" = import_bigWig(
+    "bw/K562_1M_qPRO_Rep1_deDuped_fwd.bw", 
+    "bw/K562_1M_qPRO_Rep1_deDuped_rev.bw",
+    genome = "hg38", keep.X = F, keep.Y = F
+    ),
+ "K562_1M_qPRO_rep2" = import_bigWig(
+    "bw/K562_1M_qPRO_Rep2_deDuped_fwd.bw", 
+    "bw/K562_1M_qPRO_Rep2_deDuped_rev.bw",
+    genome = "hg38", keep.X = F, keep.Y = F
+    ),
+ "K562_250k_qPRO_rep1" = import_bigWig(
+    "bw/K562_250k_qPRO_Rep1_deDuped_fwd.bw", 
+    "bw/K562_250k_qPRO_Rep1_deDuped_rev.bw",
+    genome = "hg38", keep.X = F, keep.Y = F
+    ),
+  "K562_250k_qPRO_rep2" = import_bigWig(
+    "bw/K562_250k_qPRO_Rep2_deDuped_fwd.bw", 
+    "bw/K562_250k_qPRO_Rep2_deDuped_rev.bw",
+    genome = "hg38", keep.X = F, keep.Y = F
+    )
+)
+
+# Reading in bw files for deeply sequenced K562 PRO-seq 
+# from Core & Martins 2014 (PMID: 25383968)
+# Signal tracks were downloaded from GEO (GSE60456) and 
+# converted to hg38 using liftOver.
+# Note: these files are not available in the gitHub 
+# repository because the file size is too large.
+# If you need these files, please request them from the 
+# author directly.
+K562_CoreAndMartins <- import_bigWig(
+    "K562_Core2014_PROseq_hg38_fwd.bw",
+    "K562_Core2014_PROseq_hg38_rev.bw",
+    genome = "hg38", keep.X = F, keep.Y = F
+)
+
+# Reading in dREG peak files 
+# generated using the dREG gateway: 
+# https://django.dreg.scigap.org/)
+K562_1M_sPRO_dREG <-
+  read_tsv(
+    "dREGpeaks/sPRO_1M_dREGpeaks.bed",
+    col_names = c("chr",
+                  "start",
+                  "stop",
+                  "maxScore",
+                  "p",
+                  "center")
+  )
+K562_1M_qPRO_dREG <-
+  read_tsv(
+    "dREGpeaks/qPRO_1M_dREGpeaks.bed",
+    col_names = c("chr",
+                  "start",
+                  "stop",
+                  "maxScore",
+                  "p",
+                  "center")
+  )
+K562_250k_qPRO_dREG <-
+  read_tsv(
+    "dREGpeaks/qPRO_250k_dREGpeaks.bed",
+    col_names = c("chr",
+                  "start",
+                  "stop",
+                  "maxScore",
+                  "p",
+                  "center")
+  )
+
+# Making dREG files into GRanges
+K562_1M_sPRO_dREG.gr <-
+  tidyChromosomes(
+    makeGRangesFromDataFrame(
+      K562_1M_sPRO_dREG, 
+      keep.extra.columns = T
+      )
+    )
+K562_1M_qPRO_dREG.gr <- 
+  tidyChromosomes(
+    makeGRangesFromDataFrame(
+      K562_1M_qPRO_dREG, 
+      keep.extra.columns = T
+      )
+    )
+K562_250k_qPRO_dREG.gr <- 
+  tidyChromosomes(
+    makeGRangesFromDataFrame(
+      K562_250k_qPRO_dREG, 
+      keep.extra.columns = T
+      )
+    )
+```
+
+## Normalizing, merging replicates, saving bigWigs
+```{r collapse = T, error = F, message = F, warning = F, eval = F, echo = T}
+# Merging replicates
+PROseq_merged.lst <- list(
+  "K562_1M_PRO" = mergeGRangesData(
+    PROseq.lst$K562_1M_PRO_rep1,
+    PROseq.lst$K562_1M_PRO_rep2
+  ),
+  "K562_1M_qPRO" = mergeGRangesData(
+    PROseq.lst$K562_1M_qPRO_rep1,
+    PROseq.lst$K562_1M_qPRO_rep2
+  ),
+  "K562_250k_qPRO" = mergeGRangesData(
+    PROseq.lst$K562_250k_qPRO_rep1,
+    PROseq.lst$K562_250k_qPRO_rep2
+  )
+)
+
+# Normlizing PRO-seq data using Reads Per Million
+PROseq_merged_normed.lst <- 
+  lapply(PROseq_merged.lst, RPMnorm)
+
+PROseq_normed.lst <- lapply(PROseq.lst, RPMnorm)
+
+# Writing merged normalized PROseq bigWig files
+dir.create("bw/merged_normed/")
+
+lapply(X = names(PROseq_merged_normed.lst),
+       FUN = export.bw.stranded,
+       path = "bw/merged_normed/", 
+       GRanges.lst = PROseq_merged_normed.lst)
+```
+
+## Getting gene list
+```{r collapse = T, error = F, message = F, warning = F, eval = F, echo = T}
+# Getting list of all hg38 transcripts
+genes.gr <- 
+  tidyChromosomes(
+    transcripts(
+      TxDb.Hsapiens.UCSC.hg38.knownGene
+      ), 
+    keep.X = F, 
+    keep.Y = F)
+
+# Removing transcripts smaller than 5kb
+genes.gr <- 
+  genes.gr[which((end(genes.gr) - start(genes.gr)) > 5000)]
+
+# Gene Body (TSS+300 to TES-300)
+GB.gr <- genebodies(genes.gr, 300, -300)
+
+# Pause Region (TSS-200 to TSS+300)
+PR.gr <- genebodies(genes.gr, -200, 300, fix.end = "start")
+
+# Upstream Region (TSS-700 to TSS-200)
+US.gr <- genebodies(genes.gr, -700, -200, fix.end = "start")
+```
+
+## Getting count matrices
+```{r collapse = T, error = F, message = F, warning = F, eval = F, echo = T}
+# Getting count matrix for GB (of RPM)
+GB_counts.mat <- getCountsByRegions(
+    PROseq_normed.lst, 
+    GB.gr,
+    melt = TRUE,
+    region_names = GB.gr$tx_name
+    ) %>%
+    spread(sample, signal)
+
+# Getting count matrix for PR (of RPM)
+PR_counts.mat <- getCountsByRegions(
+    PROseq_normed.lst, 
+    PR.gr,
+    melt = TRUE,
+    region_names = PR.gr$tx_name
+    ) %>%
+    spread(sample, signal)
+
+# Getting count matrix for US (of RPM)
+US_counts.mat <- getCountsByRegions(
+    PROseq_normed.lst, 
+    US.gr,
+    melt = TRUE,
+    region_names = US.gr$tx_name
+    ) %>%
+    spread(sample, signal)
+```
+
+## Plotting correlation
+```{r collapse = T, error = F, message = F, warning = F, eval = F, echo = T}
+# Generating GB counts matrix in long format pivoted on Replicate
+GB_counts_long.mat <-
+  GB_counts.mat[,-c(6:7)] %>%
+    gather("sample", "count", -region) %>%
+    separate(sample, into = c(NA, NA, "method", "Rep")) %>%
+    spread(Rep, count)
+
+# Generating GB counts matrix in long format pivoted on method
+GB_counts_long_byMethod.mat <- 
+  GB_counts.mat[,-c(6:7)] %>%
+    gather( "sample", "count", - region) %>%
+    separate(sample, into = c(NA, NA, "method", "Rep")) %>%
+    spread(method, count)
+
+# Plotting correlation scatterplot by replicate
+p1 <- ggplot(
+  GB_counts_long.mat, aes(x = rep1, y = rep2)) + 
+    geom_abline(
+      intercept = 0, 
+      slope = 1, 
+      linetype = "dashed", 
+      size = 0.5) +
+    geom_hex(bins = c(50, 50)) +
+    stat_cor(
+            method = "spearman",
+            label.x.npc = c("left"),
+            label.y.npc = c("top"),
+            output.type = "text",
+            hjust = -0.1
+        ) +
+    scale_fill_viridis_c(name = "Density") +
+    facet_grid(.~method)+
+    annotation_logticks(size = 0.25) +
+    xlab("Gene Body Rep. 1")+
+    ylab("Gene Body Rep. 2")+
+    scale_x_log10(
+      labels = trans_format("log10", math_format(10 ^ .x))
+      ) +
+    scale_y_log10(
+      labels = trans_format("log10", math_format(10 ^ .x))
+      ) +
+    ggtheme.jj()
+
+# Plotting correlation scatterplot by method
+p2 <- ggplot(
+  GB_counts_long_byMethod.mat, aes(x = qPRO, y = PRO)) + 
+    geom_abline(
+      intercept = 0, 
+      slope = 1, 
+      linetype = "dashed", 
+      size = 0.5) +
+    geom_hex(bins = c(50, 50)) +
+    stat_cor(
+            method = "spearman",
+            label.x.npc = c("left"),
+            label.y.npc = c("top"),
+            output.type = "text",
+            hjust = -0.1
+        ) +
+    scale_fill_viridis_c(name = "Density") +
+    facet_grid(.~Rep)+
+    annotation_logticks(size = 0.25) +
+    xlab("Gene Body qPRO")+
+    ylab("Gene Body PRO")+
+    scale_x_log10(
+      labels = trans_format("log10", math_format(10 ^ .x))
+      ) +
+    scale_y_log10(
+      labels = trans_format("log10", math_format(10 ^ .x))
+      ) +
+    ggtheme.jj()
+
+# Generating PR counts matrix in long format pivoted on Replicate
+PR_counts_long.mat <-
+  PR_counts.mat[,-c(6:7)] %>%
+    gather("sample", "count", -region) %>%
+    separate(sample, into = c(NA, NA, "method", "Rep")) %>%
+    spread(Rep, count)
+
+# Generating PR counts matrix in long format pivoted on method
+PR_counts_long_byMethod.mat <- 
+  PR_counts.mat[,-c(6:7)] %>%
+    gather( "sample", "count", - region) %>%
+    separate(sample, into = c(NA, NA, "method", "Rep")) %>%
+    spread(method, count)
+
+# Plotting PR correlation scatterplot by replicate
+p3 <- ggplot(
+  PR_counts_long.mat, aes(x = rep1, y = rep2)) + 
+    geom_abline(
+      intercept = 0, 
+      slope = 1, 
+      linetype = "dashed", 
+      size = 0.5) +
+    geom_hex(bins = c(50, 50)) +
+    stat_cor(
+            method = "spearman",
+            label.x.npc = c("left"),
+            label.y.npc = c("top"),
+            output.type = "text",
+            hjust = -0.1
+        ) +
+    scale_fill_viridis_c(name = "Density") +
+    facet_grid(.~method)+
+    annotation_logticks(size = 0.25) +
+    xlab("Gene Body Rep. 1")+
+    ylab("Gene Body Rep. 2")+
+    scale_x_log10(
+      labels = trans_format("log10", math_format(10 ^ .x))
+      ) +
+    scale_y_log10(
+      labels = trans_format("log10", math_format(10 ^ .x))
+      ) +
+    ggtheme.jj()
+
+# Plotting PR correlation scatterplot by method
+p4 <- ggplot(
+  PR_counts_long_byMethod.mat, aes(x = qPRO, y = PRO)) + 
+    geom_abline(
+      intercept = 0, 
+      slope = 1, 
+      linetype = "dashed", 
+      size = 0.5) +
+    geom_hex(bins = c(50, 50)) +
+    stat_cor(
+            method = "spearman",
+            label.x.npc = c("left"),
+            label.y.npc = c("top"),
+            output.type = "text",
+            hjust = -0.1
+        ) +
+    scale_fill_viridis_c(name = "Density") +
+    facet_grid(.~Rep)+
+    annotation_logticks(size = 0.25) +
+    xlab("Gene Body qPRO")+
+    ylab("Gene Body PRO")+
+    scale_x_log10(
+      labels = trans_format("log10", math_format(10 ^ .x))
+      ) +
+    scale_y_log10(
+      labels = trans_format("log10", math_format(10 ^ .x))
+      ) +
+    ggtheme.jj()
+```
+
+
+## Making metaplots
+```{r collapse = T, error = F, message = F, warning = F, eval = F, echo = T}
+# getting matrix of mean+75%CI by subsampling for 
+# Promoter region, + strand
+PR_sub_fwd.mat <- metaSubsample(
+  PROseq_merged_normed.lst,
+  promoters(genes.gr, 500, 500),
+  binsize = 1,
+  first.output.xval = -500
+)
+
+# Adding strand column
+PR_sub_fwd.mat$strand <- "fwd"
+
+# Creating genes.gr with inverted strands
+# For subsampling minus strand at promoters
+PR_rev.gr <- 
+  invertStrand(promoters(genes.gr, 500, 500))
+
+# getting matrix of mean+75%CI by subsampling for 
+# Promoter region, - strand
+PR_sub_rev.mat <- metaSubsample(
+  PROseq_merged_normed.lst,
+  PR_rev.gr,
+  binsize = 1,
+  first.output.xval = -500
+)
+
+# Adding strand column
+PR_sub_rev.mat$strand <- "rev"
+
+# Inverting x values (they are oriented backwards
+# because we inverted the strand of our regions)
+PR_sub_rev.mat$x <- rev(PR_sub_rev.mat$x)
+
+# Negating values
+PR_sub_rev.mat$mean = PR_sub_rev.mat$mean * -1
+PR_sub_rev.mat$upper = PR_sub_rev.mat$upper * -1
+PR_sub_rev.mat$lower = PR_sub_rev.mat$lower * -1
+
+PR_sub_all.mat <- rbind(
+  PR_sub_fwd.mat, PR_sub_rev.mat
+)
+
+# Plotting
+p5 <- ggplot(
+  PR_sub_all.mat, aes(x = x, y = mean)
+  ) +
+    geom_ribbon(
+      aes(ymin = lower, 
+          ymax = upper, 
+          fill = strand), 
+      alpha = 0.5, 
+      show.legend = F
+      ) +
+    geom_line(
+      aes(color = strand), 
+      show.legend = F, 
+      size = 0.1
+      )+
+    facet_grid(sample.name~.)+
+    scale_color_manual(
+      values = c(fwd = "#BB0021", rev = "#3B4992")
+      )+
+    scale_fill_manual(
+      values = c(fwd = "#BB0021", rev = "#3B4992")
+      )+
+    ggtheme.jj()+
+    xlab("Distance from TSS (bp)")+
+    ylab("Mean + 75% CI")
+
+# Getting GRanges of enhancers 
+# (dREG peaks > 10kb from a promoter)
+enh.gr <- K562_1M_sPRO_dREG.gr
+ranges(enh.gr) <- enh.gr$center
+enh.gr <- 
+  enh.gr[(distanceToNearest(enh.gr, PR.gr))@from,]
+enh.gr$distTosPR <- 
+  mcols(distanceToNearest(enh.gr, PR.gr))$distance
+enh.gr <- enh.gr[which(enh.gr$distTosPR > 1e4)]
+
+# creating stranded GRs for enhancers
+enh_fwd.gr <- enh.gr
+strand(enh_fwd.gr) <-  "+"
+enh_rev.gr <- enh.gr
+strand(enh_rev.gr) <-  "-"
+
+# getting matrix of mean+75%CI by subsampling for 
+# enhancer regions, + strand
+
+enh_sub_fwd.mat <- metaSubsample(
+  PROseq_merged_normed.lst,
+  promoters(enh_fwd.gr, 500, 500),
+  binsize = 1,
+  first.output.xval = -500
+)
+
+# Adding strand column
+enh_sub_fwd.mat$strand <- "fwd"
+
+# getting matrix of mean+75%CI by subsampling for 
+# Promoter region, - strand
+enh_sub_rev.mat <- metaSubsample(
+  PROseq_merged_normed.lst,
+  promoters(enh_rev.gr, 500, 500),
+  binsize = 1,
+  first.output.xval = -500
+)
+
+# Adding strand column
+enh_sub_rev.mat$strand <- "rev"
+
+# Inverting x values (they are oriented backwards
+# because we inverted the strand of our regions)
+enh_sub_rev.mat$x <- rev(enh_sub_rev.mat$x)
+
+# Negating values
+enh_sub_rev.mat$mean = enh_sub_rev.mat$mean * -1
+enh_sub_rev.mat$upper = enh_sub_rev.mat$upper * -1
+enh_sub_rev.mat$lower = enh_sub_rev.mat$lower * -1
+
+enh_sub_all.mat <- rbind(
+  enh_sub_fwd.mat, enh_sub_rev.mat
+)
+
+p6 <- 
+  ggplot(enh_sub_all.mat, aes(x = x, y = mean)) +
+  geom_ribbon(
+    aes(ymin = lower, 
+        ymax = upper, 
+        fill = strand), 
+    alpha = 0.5, 
+    show.legend = F
+    ) +
+    geom_line(
+      aes(color = strand), 
+      show.legend = F, 
+      size = 0.1
+      )+
+    facet_grid(sample.name~.)+
+    scale_color_manual(
+      values = c(fwd = "#BB0021", rev = "#3B4992")
+      )+
+    scale_fill_manual(
+      values = c(fwd = "#BB0021", rev = "#3B4992")
+      )+
+    ggtheme.jj()+
+    xlab("Distance from center of dREG peak (bp)")+
+    ylab("Mean + 75% CI")
+```
+
+## Comparison of pause index
+```{r collapse = T, error = F, message = F, warning = F, eval = F, echo = T}
+# Getting df of pause indexes for PRO-seq
+PRO_PI <- 
+  getPausingIndices(
+    PROseq_merged_normed.lst$K562_1M_PRO, 
+    PR.gr, 
+    GB.gr
+    )
+
+# Getting df of pause indexes for qPRO-seq
+qPRO_PI <- getPausingIndices(
+  PROseq_merged_normed.lst$K562_1M_qPRO, 
+  PR.gr, 
+  GB.gr
+  )
+
+PI.df <- rbind(
+    data.frame(method = "PRO", PI = PRO_PI),
+    data.frame(method = "qPRO", PI = qPRO_PI)
+)
+
+p7 <- 
+  ggplot(
+    PI.df, aes(x = method, y = PI)
+    )+
+    geom_violin(show.legend =F,
+                color = "black")+
+    geom_boxplot(
+      show.legend = F, 
+      width = 0.1, 
+      fill = "white",
+      outlier.shape = NA)+
+    ggtheme.jj()+
+    ylab("Pause Index")+
+    xlab(NULL)+
+    yscale("log10", .format = T)
+```
+
+## Intron:Exon read ratio
+```{r collapse = T, error = F, message = F, warning = F, eval = F, echo = T}
+# Getting GRs of introns and exons
+exons.gr <- 
+  tidyChromosomes(
+    tidyExons(TxDb.Hsapiens.UCSC.hg38.knownGene), 
+    keep.X = F, keep.Y = F
+    )
+introns.gr <- 
+  tidyChromosomes(
+    tidyIntrons(TxDb.Hsapiens.UCSC.hg38.knownGene), 
+    keep.X = F, keep.Y = F
+    )
+
+# dropping all 1st exons (near TSS and influenced by
+# Pause signal)
+exons.gr <- exons.gr[which(exons.gr$exon_rank > 1)]
+
+# dropping all exons left within 5kb of annotated TSS
+exon_dist.hits <- distanceToNearest(exons.gr, PR.gr)
+exons_safe <- exon_dist.hits[which(mcols(exon_dist.hits)$distance > 5000)]
+exons.gr <- exons.gr[exons_safe@from]
+
+# Getting sum of total reads mapping in introns and exons
+intronExon.df <- data.frame(
+    "data" = c("PRO", "qPRO"),
+    "exonCount" = c(
+        sum(getCountsByRegions(
+            PROseq_merged_normed.lst$K562_1M_PRO, exons.gr
+            )
+          ),
+        sum(getCountsByRegions(
+            PROseq_merged_normed.lst$K562_1M_qPRO, exons.gr
+            )
+          )
+    ),
+    "intronCount" = c(
+        sum(getCountsByRegions(
+            PROseq_merged_normed.lst$K562_1M_PRO, introns.gr
+            )
+          ),
+        sum(getCountsByRegions(
+            PROseq_merged_normed.lst$K562_1M_qPRO, introns.gr
+            )
+          )
+    )
+)
+
+# Getting total bp covered by introns and exons
+exonLength <- sum(lengths(exons.gr))
+intronLength <- sum(lengths(introns.gr))
+
+# Normalizing read counts per million bp 
+intronExon.df$exonCount <- 
+  intronExon.df$exonCount * (1e6 / exonLength)
+intronExon.df$intronCount <- 
+  intronExon.df$intronCount * (1e6 / intronLength)
+
+# Calculating ratio of reads in exons:introns
+intronExon.df$ratio <- 
+  intronExon.df$exonCount / intronExon.df$intronCount
+
+
+intronExon.df$data <- factor(intronExon.df$data, levels = c("PRO", "qPRO"))
+
+p8 <- ggplot(intronExon.df, aes(x = data, y = ratio))+
+    geom_col(fill = "grey")+
+    scale_fill_npg()+
+    ggtheme.jj()
+```
+
+## PCA analysis
+```{r collapse = T, error = F, message = F, warning = F, eval = F, echo = T}
+# Getting count matrix for GB (raw counts for DESeq)
+GB_counts_raw.mat <- getCountsByRegions(
+    PROseq.lst, 
+    GB.gr,
+    melt = TRUE,
+    region_names = GB.gr$tx_name
+    ) %>%
+    spread(sample, signal)
+
+# Getting count matrix in GB for Core&Martins data
+GB_counts_raw_CoreAndMartins.int <- 
+  getCountsByRegions(
+    K562_CoreAndMartins,
+    GB.gr
+  )
+
+# Combining
+GB_counts_raw.mat$CoreMartins <- 
+  GB_counts_raw_CoreAndMartins.int
+
+# Making df for DESeq
+GB_counts_raw.df <- GB_counts_raw.mat
+rownames(GB_counts_raw.df) <- GB_counts_raw.mat$region
+GB_counts_raw.df <- GB_counts_raw.df[,-c(1, 6,7)]
+
+colData <- data.frame(
+    row.names = colnames(GB_counts_raw.df),
+    "method" = c("PRO", "PRO", "qPRO", "qPRO", "CoreAndMartins"),
+    "rep" = c("1", "2", "1", "2","1"))
+    
+# Creating DESeq object
+ddsGB <- 
+  DESeqDataSetFromMatrix(
+    GB_counts_raw.df, 
+    colData, 
+    design = ~ method
+    )
+
+ddsGB <- DESeq(ddsGB)
+
+# Regularizing log transform
+rldGB <- rlog(ddsGB, blind = F)
+
+# Getting PCA data
+pcaDataGB <-
+   plotPCA(rldGB,
+           intgroup = c("method"),
+           returnData = TRUE)
+percentVarGB <- round(100 * attr(pcaDataGB, "percentVar"))
+
+# Plotting PCA
+p9 <- ggplot(pcaDataGB, aes(PC1, PC2, color = method)) +
+   geom_point(size = 1, shape = 17) +
+   xlab(paste0("PC1: ", percentVarGB[1], "% variance")) +
+   ylab(paste0("PC2: ", percentVarGB[2], "% variance")) +
+   scale_color_npg() +
+   ggtheme.jj()
+```
+
+# 4. Session Info
+```{r}
+sessionInfo()
+```
+

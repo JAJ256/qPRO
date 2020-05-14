@@ -1,0 +1,58 @@
+hub qPROtrackHub
+shortLabel GAF Track Hub
+longLabel Data from 'A rapid, sensitive, scalable method for Precision Run-On sequencing (PRO-seq)'
+useOneFile on
+email jaj256@cornell.edu
+
+genome hg38
+	
+track 1M_K562_PROseq_fwd
+shortLabel 1M K562 PRO-seq fwd
+longLabel 1M K562 replicate-merged RPM normalized PRO-seq signal forward strand
+color 255,0,0
+type bigWig 100 0
+maxHeightPixels 100:16:8
+bigDataUrl https://github.com/JAJ256/qPRO/raw/master/bw/merged_normed/K562_1M_PRO_fwd.bw
+
+track 1M_K562_PROseq_rev
+shortLabel 1M K562 PRO-seq rev
+longLabel 1M K562 replicate-merged RPM normalized PRO-seq signal reverse strand
+negateValues on
+altColor 0,0,255
+type bigWig -100 0
+maxHeightPixels 100:16:8
+bigDataUrl https://github.com/JAJ256/qPRO/raw/master/bw/merged_normed/K562_1M_PRO_rev.bw
+
+track 1M_K562_qPROseq_fwd
+shortLabel 1M qK562 PRO-seq fwd
+longLabel 1M qK562 replicate-merged RPM normalized PRO-seq signal forward strand
+color 255,0,0
+type bigWig 100 0
+maxHeightPixels 100:16:8
+bigDataUrl https://github.com/JAJ256/qPRO/raw/master/bw/merged_normed/K562_1M_qPRO_fwd.bw
+
+track 1M_qK562_PROseq_rev
+shortLabel 1M K562 qPRO-seq rev
+longLabel 1M qK562 replicate-merged RPM normalized PRO-seq signal reverse strand
+negateValues on
+altColor 0,0,255
+type bigWig -100 0
+maxHeightPixels 100:16:8
+bigDataUrl https://github.com/JAJ256/qPRO/raw/master/bw/merged_normed/K562_1M_qPRO_rev.bw
+
+track 250k_K562_qPROseq_fwd
+shortLabel 250k qK562 PRO-seq fwd
+longLabel 250k qK562 replicate-merged RPM normalized PRO-seq signal forward strand
+color 255,0,0
+type bigWig 100 0
+maxHeightPixels 100:16:8
+bigDataUrl https://github.com/JAJ256/qPRO/raw/master/bw/merged_normed/K562_250k_qPRO_fwd.bw
+
+track 250k_qK562_PROseq_rev
+shortLabel 250k K562 qPRO-seq rev
+longLabel 250k qK562 replicate-merged RPM normalized PRO-seq signal reverse strand
+negateValues on
+altColor 0,0,255
+type bigWig -100 0
+maxHeightPixels 100:16:8
+bigDataUrl https://github.com/JAJ256/qPRO/raw/master/bw/merged_normed/K562_250k_qPRO_rev.bw
