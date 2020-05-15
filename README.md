@@ -1,10 +1,14 @@
 # Supplemental Data and Code for 'A rapid, sensitive, scalable method for Precision Run-On sequencing (PRO-seq)'
 
-Julius Judd<sup>1</sup>
+Julius Judd<sup>1</sup>\*, Luke A. Wojenski<sup>2</sup>\*, Lauren M. Wainman<sup>2</sup>\*, Nathaniel D. Tippens<sup>1</sup>, Edward J. Rice<sup>3</sup>, Alexis Dziubek<sup>1,2</sup>, Geno J. Villafano<sup>2</sup>, Erin M. Wissink<sup>1</sup>, Philip Versluis<sup>1</sup>, Lina Bagepalli<sup>1</sup>, Sagar R. Shah<sup>1</sup>, Dig B. Mahat<sup>1</sup>, Jacob M. Tome<sup>1</sup>, Charles G. Danko<sup>3,4</sup>, John T. Lis<sup>1</sup>, Leighton J. Core<sup>2</sup>
 
-<sup>1</sup>Department of Molecular Biology and Genetics, Cornell University, Ithaca, New York 14835, USA
-
-
+\*Equal Contribution  
+<sup>1</sup>Department of Molecular Biology and Genetics, Cornell University, Ithaca, New York 14835, USA  
+<sup>2</sup>Department of Molecular and Cell Biology, Institute of Systems Genomics, University of Connecticut, Storrs, CT 06269, USA  
+<sup>3</sup>Baker Institute for Animal Health, College of Veterinary Medicine, Cornell University, Ithaca, NY 14853, USA  
+<sup>4</sup>Department of Biomedical Sciences, College of Veterinary Medicine, Cornell University, Ithaca, NY 14853, USA  
+  
+  
 This is a GitHub repository that contains supplemental data and analysis code for the paper "A rapid, sensitive, scalable method for Precision Run-On sequencing (PRO-seq)".  
 
 ## Data
