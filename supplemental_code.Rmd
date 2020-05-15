@@ -16,7 +16,7 @@ output:
 4. Session Info
 
 This file contains code used to analyze PRO-seq data for the manuscript 'A rapid, sensitive, scalable method for Precision Run-On'.
-This document is intended to allow any user to download our raw data (GSEXXXXXX) and exactly reproduce the analyses presented in the manuscript.
+This document is intended to allow any user to download our raw data (GSE150625) and exactly reproduce the analyses presented in the manuscript.
 Please direct questions regarding this code to jaj256@cornell.edu.
 For convenience, raw and normalized bigWig signal tracks and dREG peak calls are also included in the accompanying gitHub repository: 
 [http://github.com/jaj256/qPRO](http://github.com/jaj256/qPRO)  
