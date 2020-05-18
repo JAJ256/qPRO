@@ -43,7 +43,7 @@ shortLabel 250k qK562 PRO-seq fwd
 longLabel 250k qK562 replicate-merged RPM normalized PRO-seq signal forward strand
 color 255,0,0
 type bigWig 5 0
-maxHeightPixels 100:16:8
+maxHeightPixels 100:32:8
 bigDataUrl https://github.com/JAJ256/qPRO/raw/master/bw/merged_normed/K562_250k_qPRO_fwd.bw
 
 track 250k_qK562_PROseq_rev
