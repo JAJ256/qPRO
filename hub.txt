@@ -1,5 +1,5 @@
 hub qPROtrackHub
-shortLabel GAF Track Hub
+shortLabel qPRO Track Hub
 longLabel Data from 'A rapid, sensitive, scalable method for Precision Run-On sequencing (PRO-seq)'
 useOneFile on
 email jaj256@cornell.edu
